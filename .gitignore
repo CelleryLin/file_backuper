@@ -1,0 +1,6 @@
+dest
+src1
+src2
+.venv
+conflict_log.txt
+seen_sources.txt
