@@ -3,6 +3,18 @@ import shutil
 import hashlib
 import exifread
 from datetime import datetime
+from PIL import Image
+from pillow_heif import register_heif_opener
+
+# Register HEIF opener with Pillow
+register_heif_opener()
+
+try:
+    import pyexiv2
+    PYEXIV2_AVAILABLE = True
+except ImportError:
+    PYEXIV2_AVAILABLE = False
+    print("Warning: pyexiv2 not available. HEIC/HEIF EXIF reading will fall back to file modification time.")
 
 def get_file_hash(path):
     """Compute SHA256 hash of file for binary comparison."""
@@ -14,17 +26,37 @@ def get_file_hash(path):
 
 def get_shooting_date(path):
     """Extract shooting date from EXIF, fallback to file modified date."""
-    with open(path, "rb") as f:
-        tags = exifread.process_file(f, details=False)
-
-    date_tag = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
-    if date_tag:
+    file_ext = os.path.splitext(path)[1].lower()
+    
+    # For HEIC/HEIF files, try pyexiv2 first
+    if file_ext in ('.heic', '.heif') and PYEXIV2_AVAILABLE:
         try:
-            return datetime.strptime(str(date_tag), "%Y:%m:%d %H:%M:%S").strftime("%Y%m%d")
-        except Exception:
-            pass
+            with pyexiv2.Image(path) as img:
+                exif_dict = img.read_exif()
+                # Try different EXIF date tags
+                for tag in ['Exif.Photo.DateTimeOriginal', 'Exif.Image.DateTime', 'Exif.Photo.DateTimeDigitized']:
+                    if tag in exif_dict:
+                        date_str = exif_dict[tag]
+                        return datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S").strftime("%Y%m%d")
+        except Exception as e:
+            print(f"Warning: Could not read EXIF from {path}: {e}")
+    
+    # For traditional formats (JPEG, TIFF) or fallback for HEIC/HEIF
+    if file_ext not in ('.heic', '.heif'):
+        try:
+            with open(path, "rb") as f:
+                tags = exifread.process_file(f, details=False)
 
-    # fallback: use filesystem modified time
+            date_tag = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
+            if date_tag:
+                try:
+                    return datetime.strptime(str(date_tag), "%Y:%m:%d %H:%M:%S").strftime("%Y%m%d")
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"Warning: Could not read EXIF from {path}: {e}")
+
+    # Fallback: use filesystem modified time
     mtime = os.path.getmtime(path)
     return datetime.fromtimestamp(mtime).strftime("%Y%m%d")
 
@@ -170,5 +202,5 @@ def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log
 if __name__ == "__main__":
     src_dirs = ["./src1", "./src2"]
     dest_dir = "./dest"
-    available_types = ('.jpg', '.jpeg', '.png', '.cr2')
+    available_types = ('.jpg', '.jpeg', '.png', '.cr2', '.heic', '.heif')
     copy_images(src_dirs, dest_dir, available_types=available_types)
