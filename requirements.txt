@@ -3,4 +3,3 @@ pillow>=10.0.0
 imagehash>=4.3
 exifread>=3.0.0
 pillow-heif>=0.10.0
-pyexiv2>=2.8.0
