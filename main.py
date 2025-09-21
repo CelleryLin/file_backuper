@@ -47,6 +47,21 @@ def get_shooting_date(path):
     mtime = os.path.getmtime(path)
     return datetime.fromtimestamp(mtime).strftime("%Y%m%d")
 
+def safe_copy(src, dest):
+    """Copy file from src to dest, ensuring no overwrite."""
+    if not os.path.exists(dest):
+        shutil.copy2(src, dest)
+        return dest
+    else:
+        base, ext = os.path.splitext(dest)
+        counter = 1
+        new_dest = f"{base}_{counter}{ext}"
+        while os.path.exists(new_dest):
+            counter += 1
+            new_dest = f"{base}_{counter}{ext}"
+        shutil.copy2(src, new_dest)
+        return new_dest
+    
 def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log_path="seen_sources.txt", available_types=('.jpg', '.jpeg', '.png', '.cr2', '.heic', '.heif')):
     
     if not os.path.exists(dest_dir):
@@ -75,12 +90,11 @@ def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log
         for src in src_dirs:
             for root, _, files in os.walk(src):
                 for name in files:
-                    processed += 1
                     
                     if not name.lower().endswith(available_types):
                         continue
 
-
+                    processed += 1
                     print('({}/{})'.format(processed, total_files), end=' ')
 
                     src_path = os.path.join(root, name)
@@ -101,23 +115,21 @@ def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log
                             # Same filename, different photo
                             shooting_date = get_shooting_date(src_path)
                             new_name = f"{shooting_date}_{name}"
-                            base, ext = os.path.splitext(new_name)
 
                             # rename prev_path
                             if os.path.exists(prev_path):
                                 prev_shooting_date = get_shooting_date(prev_path)
                                 prev_new_name = f"{prev_shooting_date}_{os.path.basename(prev_path)}"
+                                base, ext = os.path.splitext(prev_new_name)
+                                counter = 0
+                                while os.path.exists(os.path.join(dest_dir, prev_new_name)):
+                                    counter += 1
+                                    prev_new_name = f"{base}_{counter}{ext}"
                                 os.rename(prev_path, os.path.join(dest_dir, prev_new_name))
 
-                            # Resolve further conflicts (_0, _1...)
-                            counter = 0
-                            while os.path.exists(os.path.join(dest_dir, new_name)):
-                                new_name = f"{base}_{counter}{ext}"
-                                counter += 1
-
                             dest_path = os.path.join(dest_dir, new_name)
-                            shutil.copy2(src_path, dest_path)
-                            seen[new_name] = (file_hash, dest_path)
+                            safe_copy(src_path, dest_path)
+                            seen[new_name] = (file_hash, dest_dir)
                             hashes.setdefault(file_hash, []).append(new_name)
                             print(f"Renamed and copied: {src_path} → {dest_path}")
 
@@ -136,7 +148,7 @@ def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log
                         else:
                             # Normal copy
                             dest_path = os.path.join(dest_dir, name)
-                            shutil.copy2(src_path, dest_path)
+                            safe_copy(src_path, dest_path)
                             seen[name] = (file_hash, dest_path)
                             hashes[file_hash] = [name]
 
@@ -190,11 +202,11 @@ def copy_video(src_dirs, dest_dir, available_types=('.mp4', '.mov', '.avi', '.mk
         for src in src_dirs:
             for root, _, files in os.walk(src):
                 for name in files:
-                    processed += 1
                     
                     if not name.lower().endswith(available_types):
                         continue
 
+                    processed += 1
                     print('({}/{})'.format(processed, total_files), end=' ')
 
                     src_path = os.path.join(root, name)
@@ -209,29 +221,27 @@ def copy_video(src_dirs, dest_dir, available_types=('.mp4', '.mov', '.avi', '.mk
                         # Same filename, different video
                         shooting_date = datetime.fromtimestamp(os.path.getmtime(src_path)).strftime("%Y%m%d")
                         new_name = f"{shooting_date}_{name}"
-                        base, ext = os.path.splitext(new_name)
 
                         # rename prev_path
                         if os.path.exists(prev_path):
                             prev_shooting_date = datetime.fromtimestamp(os.path.getmtime(prev_path)).strftime("%Y%m%d")
                             prev_new_name = f"{prev_shooting_date}_{os.path.basename(prev_path)}"
+                            base, ext = os.path.splitext(prev_new_name)
+                            counter = 0
+                            while os.path.exists(os.path.join(dest_dir, prev_new_name)):
+                                counter += 1
+                                prev_new_name = f"{base}_{counter}{ext}"
                             os.rename(prev_path, os.path.join(dest_dir, prev_new_name))
 
-                        # Resolve further conflicts (_0, _1...)
-                        counter = 0
-                        while os.path.exists(os.path.join(dest_dir, new_name)):
-                            new_name = f"{base}_{counter}{ext}"
-                            counter += 1
-
                         dest_path = os.path.join(dest_dir, new_name)
-                        shutil.copy2(src_path, dest_path)
+                        safe_copy(src_path, dest_path)
                         seen[new_name] = dest_path
                         print(f"Renamed and copied: {src_path} → {dest_path}")
 
                     else:
                         # Normal copy
                         dest_path = os.path.join(dest_dir, name)
-                        shutil.copy2(src_path, dest_path)
+                        safe_copy(src_path, dest_path)
                         seen[name] = dest_path
                         print(f"Copied: {src_path} → {dest_path}")
                     
