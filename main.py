@@ -6,15 +6,8 @@ from datetime import datetime
 from PIL import Image
 from pillow_heif import register_heif_opener
 
-# Register HEIF opener with Pillow
 register_heif_opener()
 
-try:
-    import pyexiv2
-    PYEXIV2_AVAILABLE = True
-except ImportError:
-    PYEXIV2_AVAILABLE = False
-    print("Warning: pyexiv2 not available. HEIC/HEIF EXIF reading will fall back to file modification time.")
 
 def get_file_hash(path):
     """Compute SHA256 hash of file for binary comparison."""
@@ -26,10 +19,25 @@ def get_file_hash(path):
 
 def get_shooting_date(path):
     """Extract shooting date from EXIF, fallback to file modified date."""
-    file_ext = os.path.splitext(path)[1].lower()
+    ext = os.path.splitext(path)[1].lower()
+
+    # Handle HEIC/HEIF files
+    if ext in ['.heic', '.heif']:
+        try:
+            with Image.open(path) as img:
+                exif_data = img.getexif()
+                date_str = exif_data.get(36867) or exif_data.get(306)  # DateTimeOriginal or DateTime
+                if date_str:
+                    return datetime.strptime(date_str, "%Y:%m:%d %H:%M:%S").strftime("%Y%m%d")
+        except Exception:
+            pass
     
-    # For HEIC/HEIF files, try pyexiv2 first
-    if file_ext in ('.heic', '.heif') and PYEXIV2_AVAILABLE:
+    # For other image types
+    with open(path, "rb") as f:
+        tags = exifread.process_file(f, details=False)
+
+    date_tag = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
+    if date_tag:
         try:
             with pyexiv2.Image(path) as img:
                 exif_dict = img.read_exif()
@@ -60,7 +68,7 @@ def get_shooting_date(path):
     mtime = os.path.getmtime(path)
     return datetime.fromtimestamp(mtime).strftime("%Y%m%d")
 
-def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log_path="seen_sources.txt", available_types=('.jpg', '.jpeg', '.png')):
+def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log_path="seen_sources.txt", available_types=('.jpg', '.jpeg', '.png', '.cr2', '.heic', '.heif')):
     
     if not os.path.exists(dest_dir):
         print(f"Destination directory {dest_dir} does not exist. Aborting.")
@@ -197,7 +205,6 @@ def copy_images(src_dirs, dest_dir, log_path="conflict_log.txt", seen_source_log
     print(f"Seen sources logged to {seen_source_log_path}")
 
     print("\nDone.")
-
 
 if __name__ == "__main__":
     src_dirs = ["./src1", "./src2"]
